@@ -1,0 +1,175 @@
+<!--Project webpage for Teensy 4.1 - FlexPWM Module-->
+<!DOCTYPE html>
+<html>
+<head>
+   <title> Teensy 4.1 - FlexPWM Application </title>
+   <link rel="stylesheet" type="text/css" href="styles.css">
+   <script src="https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML" type="text/javascript"></script>
+</head>
+<body>
+   <h1> How to Configure FlexPWM on Teensy 4.1</h1>
+   <div class="content1">
+       <h3> Motivation and Goal </h3>
+       <ul> 
+          <li> Today, mastering the programming of PWM modules in microcontrollers is important not only for power electronics professionals, who use these modules to control energy flow in converters, but also for anyone who wants to generate an analog signal for any application.</li>
+		  <li> Of course you can use some available libraries, but these are usually limited to simple applications and don't allow you to explore the capabilities of currently available PWM modules.</li>
+          <li> Many high-performance microcontrollers, such as the iMXRT1062 used in the Teensy 4.1, lack D/A converters. Others that do have an embedded D/A converter have a small number of channels and low resolution. Using external D/A converters with an I2C interface can be an alternative, but only for low sampling rates, as the transmission speed becomes a bottleneck for the system. See an example on <a href="https://ernane-aac.github.io/MCP4725_Fast_Write_Access/"> Fast Function to Write Samples in the MCP4725</a>. Therefore, using a PWM module as an analog output can be an interesting alternative. </li>
+          <li> It is important to emphasize that using the PWM module as a D/A converter implies the use of external (analog) low-pass filters, which result in phase delays and distort the signal as the modulating signal approaches the filter's cutoff frequency.</li>
+ 	      <li> The purpose of this project is to present some operational details to clarify how pulse width modulation operates within the FlexPWM module. A code is presented that operates a timer count in small values (<a href="#Links"> Code 1</a>), allowing us to monitor the entire PWM carrier cycle. Finally, another code with sinusoidal pulse width modulation (SPWM) is presented (<a href="#Links"> Code 2 </a>), which can serve as a basis for other applications by the reader. </li>
+          <li> This presentation does not intend to be exhaustive, since the FlexPWM module has several configuration features, catering to numerous possibilities in a wide range of PWM applications. The aim here is to provide an initial introduction, allowing the reader to easily enter the subject and, by the end of the presentation, be able to explore it independently. </li>
+       </ul>
+    </div>
+    <div class="content2">
+        <h3> Teensy 4.1 FlexPWM Module </h3>
+		<ul>
+           <li>Unlike the PWM modules found in many microcontrollers, which can have an up-counting mode (analogous to a sawtooth wave) and an up-and-down-counting mode (analogous to a triangle wave), the iMXRT1062 only features ascending counting mode, which can operate in the range of 0 to TOP or -TOP to TOP-1. The range -TOP to TOP-1 (two's complement counting) is typically used because it simplifies the calculation of the values to be loaded into the comparison registers. </li>
+           <li>FlexPWM has 7 comparison registers: </li>
+		   <ul>
+               <li>INIT - initial count value </li>
+			   <li>VAL0 - generally determines the center of the count (not necessarily), where an interrupt request and reloading of the comparison registers can be made (double sampling)	 </li>
+			   <li>VAL1 - determines the end of the cycle (TOP-1 value in this presentation), where an interrupt request and reloading of the comparison registers can be made; the counter is loaded with INIT on the next clock pulse	 </li>
+			   <li>VAL2 - PWM output A goes high when the counter reaches this value </li>
+			   <li>VAL3 - PWM output A goes low when the counter reaches this value	 </li>
+			   <li>VAL4 - PWM output B goes high when the counter reaches this value	 </li>
+			   <li>VAL5 - PWM output B goes low when the counter reaches this value</li>			   
+		   </ul>			   
+           <li>The generated PWM output pulse can be center-aligned or edge-aligned. For rising-edge alignment, as an example, INIT = VAL2 = VAL4 will be configured, with the pulse width defined only by VAL3 (PWMA) and VAL5 (PWMB). </li>
+           <li>For center alignment and two's complement counting from -TOP to TOP-1, half the pulse width (HPW) can range from 1 to TOP-1, with register VAL1 = -HPW and VAL3 = HPW. If the module is configured to operate in complementary PWMA and PWMB output mode, it is not necessary to define VAL3 and VAL5. This is the option in the <a href="#Links"> Code 1 </a> shown below, which was used to generate the CLK, PWMA and PWMB signals shown in Figs. 1, 2 and 3.</li> 
+		   <li>Fig. 1 shows an example of two's complement counting from -5 to 4, with the counter clock at 1kHz. The counter clock signal, the PWMA signal (oscilloscope signals), and an estimate of the counter state are shown. </li>
+           <li>Normally, the count limits from TOP to TOP-1 are used so that the relationship between the counter clock frequency F<sub>timer_clk</sub> and the carrier frequency F<sub>carrier</sub> is determined by (1). Note that zero is one of the states of the counter.</li>
+		        $$ F_{carrier}=\frac{F_{timer\_clk}}{2 TOP} \ (1)$$
+        </ul>
+        <figure>
+           <img src="Scope_PWM_TOP5_Width2_counting.png" style="width:50%">
+		   <figcaption>Fig. 1 - Clock, PWMA signal for 10-step counting, TOP = 5, INIT = -5, VAL1 = 4, VAL2 = -2 and VAL3 = 2</figcaption>
+        </figure>
+	    <ul>
+            <li>It can be seen in Fig. 2 that the clock signal has a frequency 10 times higher than that of the PWMA signal, as defined in (1).	</li>			
+	        <li>In Fig. 3 it can be observed that the PWMA and PWMB signals are complementary. In this case, the INDEP bit (See page 3144 of [1]) was kept low. Thus, the modulating signal is defined only by VAL2 and VAL3. If the reader chooses INDEP=1, the PWMA and PWMB outputs will be independent and the comparison registers VAL4 and VAL5 also need to be defined. </li>   
+            <li>There is no problem in considering the count from -TOP to TOP, but in this case the relationship between the frequencies will not be that defined in (1), since we will have one more clock pulse in the carrier period, which may go unnoticed for high values ​​of TOP. Also in this case, the calculation of the exact duty cycle will be slightly different for considering VAL2 = -HPW and VAL3 = HPW. Because of this, the count from TOP to TOP-1 is usually maintained, with the duty cycle determined by (2) as a function of half the pulse width (HPW).</li> 
+             $$ Duty\_cycle = \frac{2 HPW}{2 TOP} = \frac{HPW}{TOP} \ (2)$$
+			<li></li> 
+     	</ul>
+		<table>
+          <tr>
+		    <td>
+               <figure>
+                  <img src="Scope_PWM_TOP5_Width2.png" style="width:90%">
+		          <figcaption>Fig. 2 - Timer clock (1kHz) and PWMA (100Hz).</figcaption>
+              </figure>
+			</td>
+			<td>
+              <figure>
+                 <img src="Scope_PWMA_PWMB_TOP5_Width2.png" style="width:90%">
+		         <figcaption>Fig. 3 - PWMA (blue) and PWMB (yellow).</figcaption>
+              </figure>
+			</td>
+		  <tr>
+		</table>
+	    <ul>
+            <li>To emphasize the relationship presented in (1), a small value for TOP was chosen (Fig.1, TOP=5). In this case, for a timer clock equal to IPG (150MHz in Teensy 4.1), this would imply a carrier frequency of 15MHz and the clock and PWM signals would be difficult to visualize on a common oscilloscope with a low sampling rate.Thus, in the <a href="#Links">Code 1 </a>, submodule 1 of FlexPWM1 was used as a kind of prescale for submodule 2 of FlexPWM4 to allow a 1KHz clock, as shown in Fig. 2. For this, it was necessary to establish a connection from the PWMA signal of FlexPWM1, submodule 1, to the external clock of FlexPWM4 via XBAR and external jumper. </li>
+            <li>In addition to enabling the module to operate at a low frequency, another advantage of this strategy is that the clock signal passes through an external connection (pin 32), making it possible to observe it on an oscilloscope. </li>
+			<li>Using the <a href="#Links"> Code 1 </a> as a reference, the reader can easily change the counting range (INIT and VAL1) and check what happens to the carrier frequency on a common oscilloscope. </li>
+            <li>To facilitate signal manipulation, an expansion board was used as shown in Fig. 4, where signal 1A3 (FlexPWM1, submodule 2, PWMA) is connected to pin 32. Before making this connection, ensure that in the <a href="#Links"> Code 1 </a> pin 32, multiplexed to XBAR1_INOUT10, is configured as an input, otherwise damage may occur to the respective GPIOs involved. </li>
+     	</ul>			
+        <figure>
+           <img src="Picture_Teensy_41_Expansion_Board.jpg" style="width:60%">
+		   <figcaption>Fig. 4 - Teensy 4.1 Expansion Board used to manipulate the signals </figcaption>
+        </figure>
+        <br>		
+    </div>		
+	<div class="content3">
+        <h3> Sinusoidal Pulse Width Modulation (SPWM)</h3>
+		<ul>
+           <li> As previously mentioned, many microcontrollers feature counters with a counting analogous to a triangular wave in the generation of SPWM signals. The counter in the iMXRT1062's FlexPWM module only counts in up-counting mode. Regardless of the counting method, the same result can be achieved. Fig. 5 shows a comparison of the two counting methods for the same carrier frequency and modulating signal. To facilitate comparison, the triangular signal and the sawtooth signal were synchronized at the zero crossing. In terms of modulating signal amplitude, the two methods exhibit distinct proportions. </li>
+           <li> In counting analogous to the triangular wave, the PWMA signal is clear on compare match when up-counting and set on compare match when down counting. In this case, the sinusoidal modulating signal has a maximum amplitude equal to TOP/2-1 and an offset of TOP/2. </li>
+           <li> For sawtooth wave analog counting, the PWMA signal is set when matching the carrier with the negative modulating signal (VAL2) and clear when matching the carrier with the positive modulating signal (VAL3). The polarity of the output signals can be configured using the POLA and POLB bits (See page 3161 of [1]). In this case, the sinusoidal modulating signal has a maximum amplitude equal to TOP/2-1 and an offset of TOP/2. The counter in both cases has the same number of steps, but the signal amplitude in the second case (TOP=10) is half that seen in the first (TOP=20).</li>
+           <li> In power electronics, the duty cycle is typically limited to the range of 10 to 90% due to switching transient duration considerations, implying stress on the switches for two very close consecutive switching operations, avoiding magnetic saturation in filters and transformers, and maintaining compliance with the specified dead time in the case of complementary switch operation, as in full-bridge converters.</li>
+           <li> The modulating signal seen through a low-pass filter is also shown in Fig. 5. Note that due to the filter's phase delay, the PWM signal is delayed relative to the modulating signal. From Fig. 5, it can be concluded that the two SPWM modes generate the same result. Thus, regardless of which mode exists in the microcontroller used, for the same speed and resolution levels, an SPWM of the same quality can be generated.</li>
+		</ul>
+        <figure>
+           <img src="PWM comparison_Triangular_Sawtooth.png" style="width:60%">
+		   <figcaption>Fig. 5 - SPWM Comparison: Triangular Wave and Sawtooth Wave </figcaption>
+        </figure>
+        <br>		
+    </div>
+	<div class="content4">
+        <h3> SPWM Code Example </h3>
+		<ul>
+           <li> A program example for generating a sinusoidal PWM signal is presented in <a href="#Links"> Code 2 </a>. </li>
+           <li> The modulating signal (fundamental and third harmonic) is calculated in real time at a sampling rate of 20kHz. The frequency of the fundamental component of the modulating signal is 50Hz. </li>
+		   <li> Every 5 seconds, the third harmonic component is inserted/removed from the modulating signal by the ISR code. The reader can easily change the code to modify the modulating signal, for example, to insert a control law, in the case of feedback control of a converter. Of course, there are more details, such as the use of the A/D converter for reading plant signals, but this will be left for another presentation.</li>
+           <li> To visualize the resulting analog signals, a low-pass filter (two cascaded RC sections, integrated into the expansion board) with a cutoff frequency of 3189.5 Hz will be used, as shown in Fig. 6. The frequency response of the filter is shown in Fig. 7. Neglecting the loading of one section on the other, it can be said that the carrier signal (20 kHz) will be attenuated by -32 dB (x0.025).</li>		   
+		<table>
+          <tr>
+		    <td>
+               <figure>
+                  <img src="DAC_analog_filter.png" style="width:70%">
+		          <figcaption>Fig. 6 - Low-Pass Filter.</figcaption>
+              </figure>
+			</td>
+			<td>
+              <figure>
+                 <img src="Bode_LPF.png" style="width:90%">
+		         <figcaption>Fig. 7 - LPF Bode Diagram.</figcaption>
+              </figure>
+			</td>
+		  <tr>
+		</table>
+        <br>		
+    </div>
+	<div class="content5">
+        <h3> SPWM Results </h3>
+		<ul>
+		   <li> Fig. 8 shows the filtered PWMA and PWMB signals when the reference is a pure sine wave. Fig. 9 shows the same outputs when the reference has, in addition to the fundamental, a third harmonic component. </li>		
+		</ul>
+		<table>
+          <tr>
+		    <td>
+              <figure>
+                <img src="Scope_Filtered_PWMA_PWMB_sine_wave.png" style="width:90%">
+		        <figcaption>Fig.8 - Filtered PWMA and filtered PWMB for a pure sine wave reference.</figcaption>
+              </figure>
+		    </td>
+		    <td>
+              <figure>
+                <img src="Scope_Filtered_PWMA_PWMB_sine_3h_wave.png" style="width:90%">
+		        <figcaption>Fig.9 - Filtered PWMA and filtered PWMB for a sinusoidal reference with third harmonic </figcaption>
+              </figure>
+			</td>
+		  </tr>
+	    </table>
+		<ul>
+		   <li> In Fig. 10, the evolution of the pulse width can be observed as the modulating signal varies. </li>
+		</ul>
+        <figure>
+           <img src="Scope_Filtered_PWMA_and_PWMA_sine_wave.png" style="width:60%">
+		   <figcaption>Fig. 10 - Evolution of pulse width according to the modulating signal.</figcaption>
+        </figure>
+        <br>
+	</div>
+	<div class="content6">
+        <h3> Observations and Recommendations </h3>
+		<ul>		
+            <li> If you intend to use an external power source for the Teensy 4.1 (as used with the expansion board, Fig. 4), remember to open the connection between the V_in and V_USB pads. </li>
+            <li> It is possible to use an external clock generator connected to pin 32 as the clock for FlexPWM4 (see Code 1 below), but in this case note that the signal must be at the LVTTL level, 3.3V. The Teensy 4.1 pins are not 5V tolerant. </li>	
+            <li> Using Teensyduino-style code makes life easier for the user by simplifying some details, but in some cases this can be a problem. Some strange FlexPWM operations were identified in relation to the register reset condition presented in the manual [1], suggesting that these registers were modified during the startup process. Anyway, some of them were reconfigured to the reset value. Some comments are presented in codes 1 and 2 (see below). </li>				
+		</ul>			   
+		<br>
+	</div>		
+	<div class="content7">
+        <h3 id="Links">Links </h3>
+		<ul> 
+		   <li><a href="https://github.com/Ernane-AAC/Arduino-PLL/tree/main/PLL_Arduino_Code"> Code 1: Complete Teensyduino code for generating a 10-step count in the FlexPWM module (Teensy 4.1)</a></li>
+		   <li><a href="https://github.com/Ernane-AAC/Arduino-PLL/tree/main/PLL_Arduino_Code"> Code 2: Complete Teensyduino code for generating SPWM signals (Teensy 4.1)</a></li>		   
+	       <li><a href="https://ernane-aac.github.io/MCP4725_Fast_Write_Access/"> Using I2C D/A Converters </a></li>
+		</ul>
+        <br>		
+	</div>
+	<div class="content8">
+        <h3> References </h3>
+        <p>[1] i.MX RT1060 Processor Reference Manual, Rev. 3, 07/2021, NXP Semiconductors.</p>
+		<br>
+	</div>			
+</body>
+</html>
