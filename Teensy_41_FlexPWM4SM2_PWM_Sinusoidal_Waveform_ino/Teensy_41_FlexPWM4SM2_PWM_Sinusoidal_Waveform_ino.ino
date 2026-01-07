@@ -92,10 +92,8 @@ void pwm4_sm2_isr() {
 void setup() {
   // In spite of reset value shown in pag. 3200 of i.MX RT1060 Processor Reference Manual, Rev. 3, 07/2021.
   //  the code starts with the Flexpwm timers already in operation. Perhaps, during startup, 
-  //  the Arduino code sets the RUN bit in the Master Control Register (MCTRL). It needs confirmation!.
-  FLEXPWM1_MCTRL &= ~FLEXPWM_MCTRL_RUN(1 << 3);   // Stop the counter in FLEXPWM1   
-  FLEXPWM4_MCTRL &= ~FLEXPWM_MCTRL_RUN(1 << 2);   // Stop the counter in FLEXPWM4  
-  FLEXPWM1_MCTRL &= ~FLEXPWM_MCTRL_CLDOK(1 << 3); // Clear Load OK for FLEXPWM1-SM3 (just in case it is set) 
+  //  the Arduino code sets the RUN bit in the Master Control Register (MCTRL). It needs confirmation!. 
+  FLEXPWM4_MCTRL &= ~FLEXPWM_MCTRL_RUN(1 << 2);   // Stop the counter in FLEXPWM4   
   FLEXPWM4_MCTRL &= ~FLEXPWM_MCTRL_CLDOK(1 << 2); // Clear Load OK for FLEXPWM4-SM2 (just in case it is set) 
 
   Serial.begin(115200);
